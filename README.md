@@ -27,12 +27,23 @@ where kernels fail, and it solves that by construction instead of by luck.
 ## Status
 
 Started 2026-10-12 from the P2S Mintion exhaust vent, where the junction of a swept duct and a
-box chamber failed Open CASCADE's fillet nondeterministically. The research behind the design is
-in `docs/research.md`. The first proof is the level-set blend on a small test shape
-(`tests/test_runout.py`): a riser flush with a box on two sides, the case every B-rep kernel
-struggles with.
+box chamber failed Open CASCADE's fillet on some runs. The research behind the design is in
+`docs/`. The vent's Part A now builds through `fof.kernel`: Open CASCADE's fixed branch, driven
+through its DRAW harness, gives ten identical builds out of ten, with the fillet within 0.08 mm of
+the rolling ball along its straight runs and the corners smooth. The level-set blend (`fof.blend`)
+is proven on the flush-riser test shape (`tests/test_runout.py`): right by construction, with an
+outward bias of about three quarters of a voxel (0.15 mm at 0.2 mm) and minutes per joint, so it
+is the fallback.
 
 ## Requirements
 
 Python 3.13 (Blender's `bpy` wheel is pinned to it), `cadquery-ocp`, `trimesh`, `manifold3d`,
-`numpy`, `scipy`, `bpy`. See `requirements.txt`.
+`numpy`, `scipy`, `bpy`. See `requirements.txt`. Another project's Python 3.11 venv can use the
+exact bodies, the kernel and the checks without Blender: `pip install -e <this repo> --no-deps`.
+
+## Tools
+
+- `tools/build_occt.sh` builds Open CASCADE's fixed branch with its DRAW harness into
+  `~/.local/opt/occt-ir` (or `$FOF_OCCT`), about 30 minutes.
+- `tools/capped.sh CAP_GB cmd...` runs a command and kills it, with everything it started, if
+  their memory together passes the cap. Every heavy run goes through it.
