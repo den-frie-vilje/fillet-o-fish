@@ -9,20 +9,24 @@ joined by Manifold.
 The wall stays constant because the outside and the air are blended with concentric balls:
 outside by rho, air by rho + wall. Both grids are built from the same voxel lattice.
 """
-import numpy as np, trimesh, bpy
+import numpy as np, trimesh
+
+def _bpy():
+    import bpy          # Blender as a module: a 245 MB wheel for Python 3.13 only, so loaded on first use
+    return bpy
 
 ADAPTIVITY = 0.5
 
 def _bpy_mesh(m, name):
-    me = bpy.data.meshes.new(name)
+    me = _bpy().data.meshes.new(name)
     me.from_pydata(m.vertices.tolist(), [], m.faces.tolist())
     me.update()
-    ob = bpy.data.objects.new(name, me)
-    bpy.context.scene.collection.objects.link(ob)
+    ob = _bpy().data.objects.new(name, me)
+    _bpy().context.scene.collection.objects.link(ob)
     return ob
 
 def _to_trimesh(ob):
-    dg = bpy.context.evaluated_depsgraph_get()
+    dg = _bpy().context.evaluated_depsgraph_get()
     ev = ob.evaluated_get(dg)
     me = ev.to_mesh()
     V = np.array([v.co[:] for v in me.vertices], float)
@@ -35,7 +39,7 @@ def _to_trimesh(ob):
 
 def _node_group(voxel, offsets):
     """Mesh -> SDF grid -> offset by each value in turn -> mesh. Offsets alternate +r, -r for a closing."""
-    ng = bpy.data.node_groups.new('fof_blend', 'GeometryNodeTree')
+    ng = _bpy().data.node_groups.new('fof_blend', 'GeometryNodeTree')
     ng.interface.new_socket('Geometry', in_out='INPUT', socket_type='NodeSocketGeometry')
     ng.interface.new_socket('Geometry', in_out='OUTPUT', socket_type='NodeSocketGeometry')
     nin = ng.nodes.new('NodeGroupInput'); nout = ng.nodes.new('NodeGroupOutput')
@@ -56,7 +60,7 @@ def _node_group(voxel, offsets):
 
 def closing(m, rho, voxel):
     """m rounded on its concave edges by a ball of rho: offset out by rho, then in by rho"""
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    _bpy().ops.wm.read_factory_settings(use_empty=True)
     ob = _bpy_mesh(m, 'fof_in')
     mod = ob.modifiers.new('fof', 'NODES')
     mod.node_group = _node_group(voxel, [rho, -rho])

@@ -1,0 +1,11 @@
+numpy
+scipy
+trimesh
+networkx
+rtree
+manifold3d
+shapely
+cadquery-ocp>=8.0.1
+
+[blend]
+bpy==5.2.2

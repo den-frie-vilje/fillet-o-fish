@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fillet-o-fish"
+version = "0.1.0"
+description = "A staged, parametric engine for 3D-printable parts"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "trimesh", "networkx", "rtree", "manifold3d", "shapely", "cadquery-ocp>=8.0.1"]
+
+[project.optional-dependencies]
+blend = ["bpy==5.2.2"]
+
+[tool.setuptools]
+packages = ["fof"]
