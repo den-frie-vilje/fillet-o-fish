@@ -2,6 +2,8 @@
 numpy
 scipy
 trimesh
+networkx
+rtree
 manifold3d
 shapely
 cadquery-ocp>=8.0.1
