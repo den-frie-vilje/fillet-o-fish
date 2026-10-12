@@ -1,0 +1,8 @@
+# Python 3.13: bpy ships wheels for 3.13 only
+numpy
+scipy
+trimesh
+manifold3d
+shapely
+cadquery-ocp>=8.0.1
+bpy==5.2.2
