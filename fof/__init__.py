@@ -1,1 +1,1 @@
-__all__ = ["brep", "blend", "verify"]
+__all__ = ["brep", "kernel", "blend", "verify", "steps"]

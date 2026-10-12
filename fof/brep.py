@@ -19,7 +19,9 @@ from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.TopExp import TopExp_Explorer
-from OCP.TopAbs import TopAbs_FACE, TopAbs_SHELL, TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SHELL, TopAbs_REVERSED
+from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
+from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.TopoDS import TopoDS
 from OCP.BRep import BRep_Tool
 from OCP.TopLoc import TopLoc_Location
@@ -104,6 +106,102 @@ def volume(shape):
     g = GProp_GProps(); BRepGProp.VolumeProperties_s(shape, g); return g.Mass()
 
 def valid(shape): return BRepCheck_Analyzer(shape).IsValid()
+
+# ---- edges and fillets --------------------------------------------------------------------
+def unique_edges(shape):
+    out = []; ex = TopExp_Explorer(shape, TopAbs_EDGE)
+    while ex.More():
+        e = TopoDS.Edge(ex.Current()); ex.Next()
+        if not any(e.IsSame(q) for q in out): out.append(e)
+    return out
+
+def edge_faces(e, faces):
+    """the faces an edge belongs to (normally two)"""
+    out = []
+    for f in faces:
+        ex = TopExp_Explorer(f, TopAbs_EDGE)
+        while ex.More():
+            if ex.Current().IsSame(e): out.append(f); break
+            ex.Next()
+    return out
+
+def edge_turn(faces, p):
+    """the angle (degrees) between the normals of the faces that meet at point p; pass the edge's
+    own faces (edge_faces), or a face that merely passes close by can be paired instead"""
+    from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
+    from OCP.BRepLProp import BRepLProp_SLProps
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    ns = []
+    for f in faces:
+        pr = GeomAPI_ProjectPointOnSurf(p, BRep_Tool.Surface_s(f))
+        if pr.NbPoints() and pr.LowerDistance() < 1e-4:
+            u, v = pr.LowerDistanceParameters()
+            sp = BRepLProp_SLProps(BRepAdaptor_Surface(f), u, v, 1, 1e-6)
+            if sp.IsNormalDefined():
+                n = sp.Normal(); ns.append(np.array([n.X(), n.Y(), n.Z()]) * (-1 if f.Orientation() == TopAbs_REVERSED else 1))
+    if len(ns) < 2: return 0.0
+    return float(np.degrees(np.arccos(np.clip(ns[0] @ ns[1], -1, 1))))
+
+def edges_where(s, keep, faces=None):
+    """the edges of s that keep(points along it) accepts, with a midpoint of each; with faces,
+    only edges whose two faces actually turn (a seam between flush faces has nothing to round)"""
+    edges, mids = [], []
+    for e in unique_edges(s):
+        c = BRepAdaptor_Curve(e)
+        ts = np.linspace(c.FirstParameter(), c.LastParameter(), 5)
+        pts = np.array([[c.Value(t).X(), c.Value(t).Y(), c.Value(t).Z()] for t in ts])
+        if keep(pts) and (faces is None or edge_turn(edge_faces(e, faces), c.Value(ts[2])) > 1.0):
+            edges.append(e); mids.append(pts[2])
+    assert edges, 'no edges found to fillet'
+    return edges, mids
+
+def junction_edges(s, keep):
+    """the edges of s that keep() accepts and that actually turn, with a midpoint of each"""
+    faces = []
+    ex = TopExp_Explorer(s, TopAbs_FACE)
+    while ex.More(): faces.append(TopoDS.Face(ex.Current())); ex.Next()
+    return edges_where(s, keep, faces)
+
+from fof import kernel as fof_kernel          # the fixed kernel (OCCT's IR branch) through its DRAW harness
+
+def fillet_edges(s, edges, mids, rho):
+    """s with the given edges rounded by a ball of rho: through the fixed kernel when it is installed"""
+    if fof_kernel is not None and fof_kernel.available():
+        return fof_kernel.fillet(s, mids, rho)
+    fl = BRepFilletAPI_MakeFillet(s)
+    for e in edges: fl.Add(rho, e)
+    fl.Build(); assert fl.IsDone(), 'fillet failed'
+    out = fl.Shape()
+    assert BRepCheck_Analyzer(out).IsValid(), 'filleted body is not a valid solid'
+    return out
+
+def fused_and_filleted(make_a, make_b, rho, keep):
+    """make_a() and make_b() fused, with every edge that keep(points along it) accepts rounded by a
+    ball of rho. Returns the result, the number of edges, and the fused body before the fillet."""
+    if fof_kernel is not None and fof_kernel.available():
+        a, b = make_a(), make_b()
+        s = unify(fuse(a, b))
+        assert volume(s) > max(volume(a), volume(b)), 'fused body is smaller than its parts'
+        edges, mids = junction_edges(s, keep)
+        return fof_kernel.fillet(s, mids, rho), len(edges), s
+    # shortcut: the bindings' own kernel (8.0.1) fails this fillet on some runs (its internal order
+    # follows memory addresses); a fresh attempt from new solids nearly always succeeds and every
+    # success gives the same solid. Upgrade: install the fixed kernel (fof: tools/build_occt.sh).
+    for attempt in range(8):
+        a, b = make_a(), make_b()
+        s = unify(fuse(a, b))
+        assert volume(s) > max(volume(a), volume(b)), 'fused body is smaller than its parts'
+        edges, _ = junction_edges(s, keep)
+        fl = BRepFilletAPI_MakeFillet(s)
+        for e in edges: fl.Add(rho, e)
+        fl.Build()
+        if fl.IsDone(): break
+    assert fl.IsDone(), 'fillet failed %d times' % (attempt + 1)
+    if attempt: print('fillet %.0f mm: done on attempt %d' % (rho, attempt + 1))
+    out = fl.Shape()
+    assert BRepCheck_Analyzer(out).IsValid(), 'filleted body is not a valid solid'
+    return out, len(edges), s
+
 
 # ---- tessellation -----------------------------------------------------------------------
 def mesh(shape, deflection=0.01, angle=0.05):
